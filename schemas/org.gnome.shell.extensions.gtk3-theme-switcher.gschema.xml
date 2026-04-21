@@ -9,7 +9,6 @@
       <summary>GTK3 dark theme</summary>
       <description>The GTK3 theme for dark mode. Empty falls back to Adwaita-dark.</description>
     </key>
-
     <key name="gtk3-light-theme" type="s">
       <default>""</default>
       <summary>GTK3 light theme</summary>
@@ -22,13 +21,11 @@
       <summary>Manage icon theme</summary>
       <description>Whether to switch the icon theme with the color scheme.</description>
     </key>
-
     <key name="icon-dark-theme" type="s">
       <default>""</default>
       <summary>Icon dark theme</summary>
       <description>Icon theme for dark mode. Empty means do not change.</description>
     </key>
-
     <key name="icon-light-theme" type="s">
       <default>""</default>
       <summary>Icon light theme</summary>
@@ -41,17 +38,32 @@
       <summary>Manage Kvantum theme</summary>
       <description>Whether to switch the Kvantum (Qt) theme with the color scheme.</description>
     </key>
-
     <key name="kvantum-dark-theme" type="s">
       <default>""</default>
       <summary>Kvantum dark theme</summary>
       <description>Kvantum theme for dark mode. Empty means do not change.</description>
     </key>
-
     <key name="kvantum-light-theme" type="s">
       <default>""</default>
       <summary>Kvantum light theme</summary>
       <description>Kvantum theme for light mode. Empty means do not change.</description>
+    </key>
+
+    <!-- Wallpaper -->
+    <key name="manage-wallpaper" type="b">
+      <default>false</default>
+      <summary>Manage wallpaper</summary>
+      <description>Whether to switch the desktop wallpaper with the color scheme.</description>
+    </key>
+    <key name="wallpaper-dark-uri" type="s">
+      <default>""</default>
+      <summary>Dark wallpaper URI</summary>
+      <description>File URI of the wallpaper for dark mode. Empty means do not change.</description>
+    </key>
+    <key name="wallpaper-light-uri" type="s">
+      <default>""</default>
+      <summary>Light wallpaper URI</summary>
+      <description>File URI of the wallpaper for light mode. Empty means do not change.</description>
     </key>
 
   </schema>

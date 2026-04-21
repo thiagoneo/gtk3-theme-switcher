@@ -8,10 +8,6 @@ import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/
 
 // ── Theme discovery ───────────────────────────────────────────────────────────
 
-/**
- * List immediate child directory names of `dir`.
- * Returns [] if the directory does not exist or is unreadable.
- */
 function listSubdirs(dir) {
     const results = [];
     try {
@@ -30,10 +26,6 @@ function listSubdirs(dir) {
     return results;
 }
 
-/**
- * List the stems of all *.kvconfig files immediately inside `dir`.
- * E.g. dir="…/KvLibadwaita" yields ["KvLibadwaita", "KvLibadwaitaDark"].
- */
 function listKvconfigStems(dir) {
     const results = [];
     try {
@@ -59,7 +51,6 @@ function fileExists(path) {
     return Gio.File.new_for_path(path).query_exists(null);
 }
 
-/** Sorted, deduplicated list of installed GTK3 themes. */
 function getGtk3Themes() {
     const found = new Set(["Adwaita", "Adwaita-dark", "HighContrast", "HighContrastInverse"]);
     const dirs = [
@@ -74,7 +65,6 @@ function getGtk3Themes() {
     return [...found].sort();
 }
 
-/** Sorted, deduplicated list of installed icon themes. */
 function getIconThemes() {
     const found = new Set(["Adwaita", "hicolor"]);
     const dirs = [
@@ -89,18 +79,6 @@ function getIconThemes() {
     return [...found].sort();
 }
 
-/**
- * Sorted, deduplicated list of installed Kvantum themes.
- *
- * Kvantum themes can be organised in two ways inside a search directory:
- *   1. Each theme in its own same-named folder:
- *      KvArc/KvArc.kvconfig
- *   2. Multiple variants grouped inside one folder:
- *      KvLibadwaita/KvLibadwaita.kvconfig
- *      KvLibadwaita/KvLibadwaitaDark.kvconfig   ← different name!
- *
- * We handle both by scanning every *.kvconfig file inside every subdir.
- */
 function getKvantumThemes() {
     const found = new Set();
     const dirs = [
@@ -110,28 +88,21 @@ function getKvantumThemes() {
     ];
     for (const d of dirs) {
         for (const subdir of listSubdirs(d)) {
-            // Skip the Colors directory (not a theme).
             if (subdir === "Colors") continue;
-            const stems = listKvconfigStems(`${d}/${subdir}`);
-            stems.forEach((s) => found.add(s));
+            listKvconfigStems(`${d}/${subdir}`).forEach((s) => found.add(s));
         }
     }
     return [...found].sort();
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── UI helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Build an Adw.ComboRow backed by a string list.
- * Index 0 is always the placeholder (maps to "" in settings).
- */
 function makeComboRow({ title, subtitle, items, placeholder, currentValue, onChange }) {
     const labels = [placeholder, ...items];
     const model = new Gtk.StringList();
     labels.forEach((l) => model.append(l));
 
     const row = new Adw.ComboRow({ title, subtitle, model });
-
     const idx = items.indexOf(currentValue);
     row.set_selected(idx >= 0 ? idx + 1 : 0);
 
@@ -139,18 +110,15 @@ function makeComboRow({ title, subtitle, items, placeholder, currentValue, onCha
         const sel = row.get_selected();
         onChange(sel === 0 ? "" : items[sel - 1]);
     });
-
     return row;
 }
 
-/** Build an Adw.SwitchRow bound to a boolean settings key. */
 function makeSwitchRow(settings, { title, subtitle, key }) {
     const row = new Adw.SwitchRow({ title, subtitle });
     settings.bind(key, row, "active", Gio.SettingsBindFlags.DEFAULT);
     return row;
 }
 
-/** Grey-out `rows` whenever the boolean settings `key` is false. */
 function syncSensitivity(settings, key, rows) {
     const update = () => {
         const on = settings.get_boolean(key);
@@ -158,6 +126,117 @@ function syncSensitivity(settings, key, rows) {
     };
     update();
     settings.connect(`changed::${key}`, update);
+}
+
+/**
+ * Build an Adw.ActionRow that shows a chosen image file path and opens a
+ * Gtk.FileChooserNative to pick a new one.
+ *
+ * @param {object} opts
+ * @param {string}   opts.title
+ * @param {string}   opts.subtitle
+ * @param {string}   opts.settingsKey  - The extension settings key (stores a file URI)
+ * @param {Gio.Settings} opts.settings
+ * @param {Gtk.Window}   opts.window   - Parent window for the file chooser dialog
+ */
+function makeWallpaperRow({ title, subtitle, settingsKey, settings, window }) {
+    const row = new Adw.ActionRow({ title, subtitle });
+
+    // Label showing the current filename (or placeholder).
+    const uriToLabel = (uri) => {
+        if (!uri) return "Not set";
+        try {
+            return GLib.filename_from_uri(uri, null)[0].split("/").pop();
+        } catch (_) {
+            return uri.split("/").pop();
+        }
+    };
+
+    const label = new Gtk.Label({
+        label: uriToLabel(settings.get_string(settingsKey)),
+        ellipsize: 3, // PANGO_ELLIPSIZE_END
+        max_width_chars: 28,
+        css_classes: ["dim-label"],
+        valign: Gtk.Align.CENTER,
+    });
+
+    const button = new Gtk.Button({
+        icon_name: "document-open-symbolic",
+        valign: Gtk.Align.CENTER,
+        css_classes: ["flat"],
+        tooltip_text: "Choose image…",
+    });
+
+    const clearButton = new Gtk.Button({
+        icon_name: "edit-clear-symbolic",
+        valign: Gtk.Align.CENTER,
+        css_classes: ["flat"],
+        tooltip_text: "Clear (do not change wallpaper)",
+    });
+
+    row.add_suffix(label);
+    row.add_suffix(button);
+    row.add_suffix(clearButton);
+    row.set_activatable_widget(button);
+
+    button.connect("clicked", () => {
+        const dialog = new Gtk.FileChooserNative({
+            title: "Choose a wallpaper image",
+            action: Gtk.FileChooserAction.OPEN,
+            transient_for: window,
+            modal: true,
+            accept_label: "Select",
+            cancel_label: "Cancel",
+        });
+
+        // Filter for common image types.
+        const filter = new Gtk.FileFilter();
+        filter.set_name("Images");
+        ["image/jpeg", "image/png", "image/webp", "image/svg+xml", "image/gif"].forEach(
+            (mt) => filter.add_mime_type(mt)
+        );
+        dialog.add_filter(filter);
+
+        // Pre-select the currently stored file, if any.
+        const current = settings.get_string(settingsKey);
+        if (current) {
+            try {
+                dialog.set_file(Gio.File.new_for_uri(current));
+            } catch (_) {}
+        } else {
+            // Default to ~/Pictures if it exists, else home dir.
+            const pics = `${GLib.get_home_dir()}/Pictures`;
+            const startDir = fileExists(pics) ? pics : GLib.get_home_dir();
+            try {
+                dialog.set_current_folder(Gio.File.new_for_path(startDir));
+            } catch (_) {}
+        }
+
+        dialog.connect("response", (dlg, response) => {
+            if (response === Gtk.ResponseType.ACCEPT) {
+                const file = dlg.get_file();
+                if (file) {
+                    const uri = file.get_uri();
+                    settings.set_string(settingsKey, uri);
+                    label.set_label(uriToLabel(uri));
+                }
+            }
+        });
+
+        dialog.show();
+    });
+
+    clearButton.connect("clicked", () => {
+        settings.set_string(settingsKey, "");
+        label.set_label(uriToLabel(""));
+    });
+
+    // Keep label in sync if settings change externally.
+    settings.connect(`changed::${settingsKey}`, () => {
+        label.set_label(uriToLabel(settings.get_string(settingsKey)));
+    });
+
+    return row;
 }
 
 // ── Preferences window ────────────────────────────────────────────────────────
@@ -169,7 +248,7 @@ export default class Gtk3ThemeSwitcherPrefs extends ExtensionPreferences {
         const iconThemes    = getIconThemes();
         const kvantumThemes = getKvantumThemes();
 
-        window.set_default_size(640, 580);
+        window.set_default_size(640, 640);
 
         const page = new Adw.PreferencesPage({
             title: "Settings",
@@ -194,7 +273,6 @@ export default class Gtk3ThemeSwitcherPrefs extends ExtensionPreferences {
             currentValue: settings.get_string("gtk3-dark-theme"),
             onChange: (v) => settings.set_string("gtk3-dark-theme", v),
         }));
-
         gtkGroup.add(makeComboRow({
             title: "Light theme",
             subtitle: "Applied when the system color scheme is light",
@@ -245,7 +323,7 @@ export default class Gtk3ThemeSwitcherPrefs extends ExtensionPreferences {
         // ── Kvantum Theme ─────────────────────────────────────────────────
         const kvDesc = kvantumThemes.length === 0
             ? "No Kvantum themes detected. Install themes under ~/.config/Kvantum/ or /usr/share/Kvantum/."
-            : `${kvantumThemes.length} Kvantum theme(s) detected. Writes the chosen theme to ~/.config/Kvantum/kvantum.kvconfig.`;
+            : `${kvantumThemes.length} Kvantum theme(s) detected. Note: running Qt apps must be restarted to pick up theme changes.`;
 
         const kvGroup = new Adw.PreferencesGroup({
             title: "Kvantum Theme (Qt apps)",
@@ -281,5 +359,41 @@ export default class Gtk3ThemeSwitcherPrefs extends ExtensionPreferences {
         kvGroup.add(lightKvRow);
 
         syncSensitivity(settings, "manage-kvantum-theme", [darkKvRow, lightKvRow]);
+
+        // ── Wallpaper ─────────────────────────────────────────────────────
+        const wpGroup = new Adw.PreferencesGroup({
+            title: "Wallpaper",
+            description:
+                "Automatically switch the desktop wallpaper with the color scheme. " +
+                "Disable this if your wallpaper already handles dark/light switching on its own.",
+        });
+        page.add(wpGroup);
+
+        const manageWpRow = makeSwitchRow(settings, {
+            title: "Switch wallpaper automatically",
+            subtitle: "Enable to set a different wallpaper for each color scheme",
+            key: "manage-wallpaper",
+        });
+        wpGroup.add(manageWpRow);
+
+        const darkWpRow = makeWallpaperRow({
+            title: "Dark wallpaper",
+            subtitle: 'Applied when the system color scheme is "prefer-dark"',
+            settingsKey: "wallpaper-dark-uri",
+            settings,
+            window,
+        });
+        wpGroup.add(darkWpRow);
+
+        const lightWpRow = makeWallpaperRow({
+            title: "Light wallpaper",
+            subtitle: "Applied when the system color scheme is light",
+            settingsKey: "wallpaper-light-uri",
+            settings,
+            window,
+        });
+        wpGroup.add(lightWpRow);
+
+        syncSensitivity(settings, "manage-wallpaper", [darkWpRow, lightWpRow]);
     }
 }

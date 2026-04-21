@@ -1,5 +1,5 @@
 // GTK3 Theme Switcher — based on gtk3-auto-dark by Sebastian Wiesner
-// Extended to support custom GTK3/icon/Kvantum themes.
+// Extended to support custom GTK3/icon/Kvantum themes and wallpaper switching.
 //
 // Original code licensed under MPL 2.0 / GPL 2+
 // https://codeberg.org/swsnr/gnome-shell-extension-gtk3-auto-dark
@@ -8,13 +8,10 @@ import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 import { DestructibleExtension } from "./lib/destructible.js";
 
-// ── Kvantum config helpers ────────────────────────────────────────────────────
+// ── Kvantum helpers ───────────────────────────────────────────────────────────
 
 const KVANTUM_CONFIG_PATH = `${GLib.get_home_dir()}/.config/Kvantum/kvantum.kvconfig`;
 
-/**
- * Read the current Kvantum config file as a string, or "" if absent.
- */
 function readKvantumConfig() {
     try {
         const [ok, contents] = GLib.file_get_contents(KVANTUM_CONFIG_PATH);
@@ -23,46 +20,26 @@ function readKvantumConfig() {
     return "";
 }
 
-/**
- * Set the Kvantum theme by rewriting the theme= key in [General].
- * Preserves any other sections/keys already present.
- *
- * @param {string} themeName
- */
 function setKvantumTheme(themeName) {
     let config = readKvantumConfig();
 
     if (config.includes("[General]")) {
         if (/^theme\s*=/m.test(config)) {
-            // Replace existing theme= line.
             config = config.replace(/^theme\s*=.*$/m, `theme=${themeName}`);
         } else {
-            // Insert theme= right after [General].
             config = config.replace("[General]", `[General]\ntheme=${themeName}`);
         }
     } else {
-        // No [General] section — prepend one.
         config = `[General]\ntheme=${themeName}\n\n${config}`;
     }
 
-    // Ensure parent directory exists.
-    const dir = GLib.path_get_dirname(KVANTUM_CONFIG_PATH);
-    GLib.mkdir_with_parents(dir, 0o755);
-
-    // Write atomically via GLib (simpler and more reliable in GJS than Gio).
-    const [ok, err] = GLib.file_set_contents(KVANTUM_CONFIG_PATH, config);
-    if (!ok) throw new Error(err ? err.message : "GLib.file_set_contents failed");
+    GLib.mkdir_with_parents(GLib.path_get_dirname(KVANTUM_CONFIG_PATH), 0o755);
+    const [ok] = GLib.file_set_contents(KVANTUM_CONFIG_PATH, config);
+    if (!ok) throw new Error("GLib.file_set_contents failed");
 }
 
 // ── Main theme application ────────────────────────────────────────────────────
 
-/**
- * Apply GTK3, icon, and Kvantum themes based on the current color scheme.
- *
- * @param {object}       log   - Logger from DestructibleExtension
- * @param {Gio.Settings} iface - org.gnome.desktop.interface settings
- * @param {Gio.Settings} ext   - Extension settings
- */
 const applyThemes = (log, iface, ext) => {
     const scheme = iface.get_string("color-scheme");
     const isDark = scheme === "prefer-dark";
@@ -83,7 +60,7 @@ const applyThemes = (log, iface, ext) => {
         }
     }
 
-    // ── Icon theme (optional) ─────────────────────────────────────────────
+    // ── Icon theme ────────────────────────────────────────────────────────
     if (ext.get_boolean("manage-icon-theme")) {
         const iconTheme = isDark
             ? ext.get_string("icon-dark-theme").trim()
@@ -94,7 +71,7 @@ const applyThemes = (log, iface, ext) => {
         }
     }
 
-    // ── Kvantum theme (optional) ──────────────────────────────────────────
+    // ── Kvantum theme ─────────────────────────────────────────────────────
     if (ext.get_boolean("manage-kvantum-theme")) {
         const kvTheme = isDark
             ? ext.get_string("kvantum-dark-theme").trim()
@@ -105,6 +82,25 @@ const applyThemes = (log, iface, ext) => {
                 setKvantumTheme(kvTheme);
             } catch (e) {
                 log.error(`Failed to set Kvantum theme: ${e.message}`);
+            }
+        }
+    }
+
+    // ── Wallpaper ─────────────────────────────────────────────────────────
+    if (ext.get_boolean("manage-wallpaper")) {
+        const uri = isDark
+            ? ext.get_string("wallpaper-dark-uri").trim()
+            : ext.get_string("wallpaper-light-uri").trim();
+        if (uri) {
+            try {
+                log.log(`Setting wallpaper to "${uri}"`);
+                const bg = Gio.Settings.new("org.gnome.desktop.background");
+                // Set picture-uri (all GNOME versions) and picture-uri-dark
+                // (GNOME 42+, used when the shell itself is in dark mode).
+                bg.set_string("picture-uri", uri);
+                bg.set_string("picture-uri-dark", uri);
+            } catch (e) {
+                log.error(`Failed to set wallpaper: ${e.message}`);
             }
         }
     }
@@ -122,7 +118,6 @@ export default class Gtk3ThemeSwitcher extends DestructibleExtension {
             iface,
             iface.connect("changed::color-scheme", () => applyThemes(log, iface, ext))
         );
-
         destroyer.addSignal(
             ext,
             ext.connect("changed", () => applyThemes(log, iface, ext))
