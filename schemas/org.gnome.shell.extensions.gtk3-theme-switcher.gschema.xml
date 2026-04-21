@@ -3,49 +3,55 @@
   <schema id="org.gnome.shell.extensions.gtk3-theme-switcher"
           path="/org/gnome/shell/extensions/gtk3-theme-switcher/">
 
+    <!-- GTK3 -->
     <key name="gtk3-dark-theme" type="s">
       <default>"adw-gtk3-dark"</default>
       <summary>GTK3 dark theme</summary>
-      <description>
-        The GTK3 theme to apply when the system color scheme is set to
-        "prefer-dark". Defaults to adw-gtk3-dark. If empty, falls back to
-        Adwaita-dark.
-      </description>
+      <description>The GTK3 theme for dark mode. Empty falls back to Adwaita-dark.</description>
     </key>
 
     <key name="gtk3-light-theme" type="s">
       <default>""</default>
       <summary>GTK3 light theme</summary>
-      <description>
-        The GTK3 theme to apply when the system color scheme is set to light.
-        If empty, the gtk-theme setting is reset to the system default.
-      </description>
+      <description>The GTK3 theme for light mode. Empty resets to system default.</description>
     </key>
 
+    <!-- Icon theme -->
     <key name="manage-icon-theme" type="b">
       <default>false</default>
       <summary>Manage icon theme</summary>
-      <description>
-        Whether to also switch the icon theme when the color scheme changes.
-      </description>
+      <description>Whether to switch the icon theme with the color scheme.</description>
     </key>
 
     <key name="icon-dark-theme" type="s">
       <default>""</default>
       <summary>Icon dark theme</summary>
-      <description>
-        The icon theme to apply when the system color scheme is set to
-        "prefer-dark". Leave empty to not change the icon theme in dark mode.
-      </description>
+      <description>Icon theme for dark mode. Empty means do not change.</description>
     </key>
 
     <key name="icon-light-theme" type="s">
       <default>""</default>
       <summary>Icon light theme</summary>
-      <description>
-        The icon theme to apply when the system color scheme is set to light.
-        Leave empty to not change the icon theme in light mode.
-      </description>
+      <description>Icon theme for light mode. Empty means do not change.</description>
+    </key>
+
+    <!-- Kvantum -->
+    <key name="manage-kvantum-theme" type="b">
+      <default>false</default>
+      <summary>Manage Kvantum theme</summary>
+      <description>Whether to switch the Kvantum (Qt) theme with the color scheme.</description>
+    </key>
+
+    <key name="kvantum-dark-theme" type="s">
+      <default>""</default>
+      <summary>Kvantum dark theme</summary>
+      <description>Kvantum theme for dark mode. Empty means do not change.</description>
+    </key>
+
+    <key name="kvantum-light-theme" type="s">
+      <default>""</default>
+      <summary>Kvantum light theme</summary>
+      <description>Kvantum theme for light mode. Empty means do not change.</description>
     </key>
 
   </schema>

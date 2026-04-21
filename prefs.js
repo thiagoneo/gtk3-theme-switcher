@@ -1,6 +1,4 @@
 // GTK3 Theme Switcher — Preferences
-//
-// Provides a GUI to choose GTK3 themes and icon themes for light and dark modes.
 
 import Adw from "gi://Adw";
 import Gtk from "gi://Gtk";
@@ -11,13 +9,10 @@ import { ExtensionPreferences } from "resource:///org/gnome/Shell/Extensions/js/
 // ── Theme discovery ───────────────────────────────────────────────────────────
 
 /**
- * Enumerate child directory names inside `dir` that satisfy `predicate`.
- *
- * @param {string} dir
- * @param {(name: string, dir: string) => boolean} predicate
- * @returns {string[]}
+ * List immediate child directory names of `dir`.
+ * Returns [] if the directory does not exist or is unreadable.
  */
-function listDirEntries(dir, predicate) {
+function listSubdirs(dir) {
     const results = [];
     try {
         const gdir = Gio.File.new_for_path(dir);
@@ -28,18 +23,43 @@ function listDirEntries(dir, predicate) {
         );
         let info;
         while ((info = enumerator.next_file(null)) !== null) {
-            if (info.get_file_type() === Gio.FileType.DIRECTORY) {
-                const name = info.get_name();
-                if (predicate(name, dir)) results.push(name);
-            }
+            if (info.get_file_type() === Gio.FileType.DIRECTORY)
+                results.push(info.get_name());
         }
-    } catch (_) {
-        // Directory doesn't exist or isn't readable — skip silently.
-    }
+    } catch (_) {}
     return results;
 }
 
-/** Return a sorted, deduplicated list of installed GTK3 themes. */
+/**
+ * List the stems of all *.kvconfig files immediately inside `dir`.
+ * E.g. dir="…/KvLibadwaita" yields ["KvLibadwaita", "KvLibadwaitaDark"].
+ */
+function listKvconfigStems(dir) {
+    const results = [];
+    try {
+        const gdir = Gio.File.new_for_path(dir);
+        const enumerator = gdir.enumerate_children(
+            "standard::name,standard::type",
+            Gio.FileQueryInfoFlags.NONE,
+            null
+        );
+        let info;
+        while ((info = enumerator.next_file(null)) !== null) {
+            if (info.get_file_type() === Gio.FileType.REGULAR) {
+                const name = info.get_name();
+                if (name.endsWith(".kvconfig"))
+                    results.push(name.slice(0, -".kvconfig".length));
+            }
+        }
+    } catch (_) {}
+    return results;
+}
+
+function fileExists(path) {
+    return Gio.File.new_for_path(path).query_exists(null);
+}
+
+/** Sorted, deduplicated list of installed GTK3 themes. */
 function getGtk3Themes() {
     const found = new Set(["Adwaita", "Adwaita-dark", "HighContrast", "HighContrastInverse"]);
     const dirs = [
@@ -47,30 +67,55 @@ function getGtk3Themes() {
         "/usr/share/themes",
         `${GLib.get_user_data_dir()}/themes`,
     ];
-    const hasGtk3 = (name, base) =>
-        Gio.File.new_for_path(`${base}/${name}/gtk-3.0`).query_exists(null);
-
     for (const d of dirs)
-        listDirEntries(d, (n) => hasGtk3(n, d)).forEach((n) => found.add(n));
-
+        listSubdirs(d)
+            .filter((n) => fileExists(`${d}/${n}/gtk-3.0`))
+            .forEach((n) => found.add(n));
     return [...found].sort();
 }
 
-/** Return a sorted, deduplicated list of installed icon themes. */
+/** Sorted, deduplicated list of installed icon themes. */
 function getIconThemes() {
     const found = new Set(["Adwaita", "hicolor"]);
     const dirs = [
         `${GLib.get_home_dir()}/.icons`,
-        "/usr/share/icons",
-        `${GLib.get_user_data_dir()}/icons`,
         `${GLib.get_home_dir()}/.local/share/icons`,
+        "/usr/share/icons",
     ];
-    const hasIndex = (name, base) =>
-        Gio.File.new_for_path(`${base}/${name}/index.theme`).query_exists(null);
-
     for (const d of dirs)
-        listDirEntries(d, (n) => hasIndex(n, d)).forEach((n) => found.add(n));
+        listSubdirs(d)
+            .filter((n) => fileExists(`${d}/${n}/index.theme`))
+            .forEach((n) => found.add(n));
+    return [...found].sort();
+}
 
+/**
+ * Sorted, deduplicated list of installed Kvantum themes.
+ *
+ * Kvantum themes can be organised in two ways inside a search directory:
+ *   1. Each theme in its own same-named folder:
+ *      KvArc/KvArc.kvconfig
+ *   2. Multiple variants grouped inside one folder:
+ *      KvLibadwaita/KvLibadwaita.kvconfig
+ *      KvLibadwaita/KvLibadwaitaDark.kvconfig   ← different name!
+ *
+ * We handle both by scanning every *.kvconfig file inside every subdir.
+ */
+function getKvantumThemes() {
+    const found = new Set();
+    const dirs = [
+        `${GLib.get_home_dir()}/.config/Kvantum`,
+        `${GLib.get_home_dir()}/.local/share/Kvantum`,
+        "/usr/share/Kvantum",
+    ];
+    for (const d of dirs) {
+        for (const subdir of listSubdirs(d)) {
+            // Skip the Colors directory (not a theme).
+            if (subdir === "Colors") continue;
+            const stems = listKvconfigStems(`${d}/${subdir}`);
+            stems.forEach((s) => found.add(s));
+        }
+    }
     return [...found].sort();
 }
 
@@ -78,17 +123,7 @@ function getIconThemes() {
 
 /**
  * Build an Adw.ComboRow backed by a string list.
- * The first entry is always a placeholder "(default / do not change)" item
- * that maps to the empty string in settings.
- *
- * @param {object} opts
- * @param {string}   opts.title
- * @param {string}   opts.subtitle
- * @param {string[]} opts.items        - Actual theme names (non-empty strings)
- * @param {string}   opts.placeholder  - Label for the empty/default choice
- * @param {string}   opts.currentValue - Currently stored settings value
- * @param {(val: string) => void} opts.onChange
- * @returns {Adw.ComboRow}
+ * Index 0 is always the placeholder (maps to "" in settings).
  */
 function makeComboRow({ title, subtitle, items, placeholder, currentValue, onChange }) {
     const labels = [placeholder, ...items];
@@ -97,7 +132,6 @@ function makeComboRow({ title, subtitle, items, placeholder, currentValue, onCha
 
     const row = new Adw.ComboRow({ title, subtitle, model });
 
-    // Select the stored value, defaulting to index 0 (placeholder) if not found.
     const idx = items.indexOf(currentValue);
     row.set_selected(idx >= 0 ? idx + 1 : 0);
 
@@ -109,15 +143,33 @@ function makeComboRow({ title, subtitle, items, placeholder, currentValue, onCha
     return row;
 }
 
+/** Build an Adw.SwitchRow bound to a boolean settings key. */
+function makeSwitchRow(settings, { title, subtitle, key }) {
+    const row = new Adw.SwitchRow({ title, subtitle });
+    settings.bind(key, row, "active", Gio.SettingsBindFlags.DEFAULT);
+    return row;
+}
+
+/** Grey-out `rows` whenever the boolean settings `key` is false. */
+function syncSensitivity(settings, key, rows) {
+    const update = () => {
+        const on = settings.get_boolean(key);
+        for (const r of rows) r.sensitive = on;
+    };
+    update();
+    settings.connect(`changed::${key}`, update);
+}
+
 // ── Preferences window ────────────────────────────────────────────────────────
 
 export default class Gtk3ThemeSwitcherPrefs extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
-        const gtkThemes = getGtk3Themes();
-        const iconThemes = getIconThemes();
+        const gtkThemes     = getGtk3Themes();
+        const iconThemes    = getIconThemes();
+        const kvantumThemes = getKvantumThemes();
 
-        window.set_default_size(640, 480);
+        window.set_default_size(640, 580);
 
         const page = new Adw.PreferencesPage({
             title: "Settings",
@@ -125,54 +177,47 @@ export default class Gtk3ThemeSwitcherPrefs extends ExtensionPreferences {
         });
         window.add(page);
 
-        // ── GTK3 Theme group ──────────────────────────────────────────────
+        // ── GTK3 Theme ────────────────────────────────────────────────────
         const gtkGroup = new Adw.PreferencesGroup({
             title: "GTK3 Theme",
             description:
-                "Choose which GTK3 theme is applied for each color scheme. " +
-                "Install adw-gtk3 to make GTK3 apps look like native GNOME 4x apps.",
+                "Theme applied to legacy GTK3 apps. Install adw-gtk3 to make " +
+                "them look like native GNOME 4x / libadwaita apps.",
         });
         page.add(gtkGroup);
 
-        const darkGtkRow = makeComboRow({
+        gtkGroup.add(makeComboRow({
             title: "Dark theme",
             subtitle: 'Applied when the system color scheme is "prefer-dark"',
             items: gtkThemes,
             placeholder: "(default: Adwaita-dark)",
             currentValue: settings.get_string("gtk3-dark-theme"),
             onChange: (v) => settings.set_string("gtk3-dark-theme", v),
-        });
-        gtkGroup.add(darkGtkRow);
+        }));
 
-        const lightGtkRow = makeComboRow({
+        gtkGroup.add(makeComboRow({
             title: "Light theme",
             subtitle: "Applied when the system color scheme is light",
             items: gtkThemes,
             placeholder: "(system default)",
             currentValue: settings.get_string("gtk3-light-theme"),
             onChange: (v) => settings.set_string("gtk3-light-theme", v),
-        });
-        gtkGroup.add(lightGtkRow);
+        }));
 
-        // ── Icon Theme group ──────────────────────────────────────────────
+        // ── Icon Theme ────────────────────────────────────────────────────
         const iconGroup = new Adw.PreferencesGroup({
             title: "Icon Theme",
             description:
-                "Optionally switch the icon theme together with the color scheme. " +
-                "Useful if your icon theme has separate light/dark variants (e.g. Papirus / Papirus-Dark).",
+                "Swap icon themes with the color scheme. Useful for themes " +
+                "that ship separate light/dark variants (e.g. Papirus / Papirus-Dark).",
         });
         page.add(iconGroup);
 
-        const manageIconRow = new Adw.SwitchRow({
+        const manageIconRow = makeSwitchRow(settings, {
             title: "Switch icon theme automatically",
             subtitle: "Enable to also swap icon themes on color scheme changes",
+            key: "manage-icon-theme",
         });
-        settings.bind(
-            "manage-icon-theme",
-            manageIconRow,
-            "active",
-            Gio.SettingsBindFlags.DEFAULT
-        );
         iconGroup.add(manageIconRow);
 
         const darkIconRow = makeComboRow({
@@ -195,13 +240,46 @@ export default class Gtk3ThemeSwitcherPrefs extends ExtensionPreferences {
         });
         iconGroup.add(lightIconRow);
 
-        // Grey-out icon rows when the toggle is off.
-        const syncIconSensitivity = () => {
-            const on = settings.get_boolean("manage-icon-theme");
-            darkIconRow.sensitive = on;
-            lightIconRow.sensitive = on;
-        };
-        syncIconSensitivity();
-        settings.connect("changed::manage-icon-theme", syncIconSensitivity);
+        syncSensitivity(settings, "manage-icon-theme", [darkIconRow, lightIconRow]);
+
+        // ── Kvantum Theme ─────────────────────────────────────────────────
+        const kvDesc = kvantumThemes.length === 0
+            ? "No Kvantum themes detected. Install themes under ~/.config/Kvantum/ or /usr/share/Kvantum/."
+            : `${kvantumThemes.length} Kvantum theme(s) detected. Writes the chosen theme to ~/.config/Kvantum/kvantum.kvconfig.`;
+
+        const kvGroup = new Adw.PreferencesGroup({
+            title: "Kvantum Theme (Qt apps)",
+            description: kvDesc,
+        });
+        page.add(kvGroup);
+
+        const manageKvRow = makeSwitchRow(settings, {
+            title: "Switch Kvantum theme automatically",
+            subtitle: "Updates kvantum.kvconfig when the color scheme changes",
+            key: "manage-kvantum-theme",
+        });
+        kvGroup.add(manageKvRow);
+
+        const darkKvRow = makeComboRow({
+            title: "Dark Kvantum theme",
+            subtitle: 'Applied when the system color scheme is "prefer-dark"',
+            items: kvantumThemes,
+            placeholder: "(do not change)",
+            currentValue: settings.get_string("kvantum-dark-theme"),
+            onChange: (v) => settings.set_string("kvantum-dark-theme", v),
+        });
+        kvGroup.add(darkKvRow);
+
+        const lightKvRow = makeComboRow({
+            title: "Light Kvantum theme",
+            subtitle: "Applied when the system color scheme is light",
+            items: kvantumThemes,
+            placeholder: "(do not change)",
+            currentValue: settings.get_string("kvantum-light-theme"),
+            onChange: (v) => settings.set_string("kvantum-light-theme", v),
+        });
+        kvGroup.add(lightKvRow);
+
+        syncSensitivity(settings, "manage-kvantum-theme", [darkKvRow, lightKvRow]);
     }
 }
