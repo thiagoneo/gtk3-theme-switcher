@@ -1,0 +1,9 @@
+{
+  "name": "GTK3 Theme Switcher",
+  "description": "Automatically switches GTK3 app themes and icon themes based on the system color scheme. Supports custom themes like adw-gtk3.",
+  "uuid": "gtk3-theme-switcher@local",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "version": 1,
+  "version-name": "1.0",
+  "settings-schema": "org.gnome.shell.extensions.gtk3-theme-switcher"
+}

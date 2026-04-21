@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.gtk3-theme-switcher"
+          path="/org/gnome/shell/extensions/gtk3-theme-switcher/">
+
+    <key name="gtk3-dark-theme" type="s">
+      <default>"adw-gtk3-dark"</default>
+      <summary>GTK3 dark theme</summary>
+      <description>
+        The GTK3 theme to apply when the system color scheme is set to
+        "prefer-dark". Defaults to adw-gtk3-dark. If empty, falls back to
+        Adwaita-dark.
+      </description>
+    </key>
+
+    <key name="gtk3-light-theme" type="s">
+      <default>""</default>
+      <summary>GTK3 light theme</summary>
+      <description>
+        The GTK3 theme to apply when the system color scheme is set to light.
+        If empty, the gtk-theme setting is reset to the system default.
+      </description>
+    </key>
+
+    <key name="manage-icon-theme" type="b">
+      <default>false</default>
+      <summary>Manage icon theme</summary>
+      <description>
+        Whether to also switch the icon theme when the color scheme changes.
+      </description>
+    </key>
+
+    <key name="icon-dark-theme" type="s">
+      <default>""</default>
+      <summary>Icon dark theme</summary>
+      <description>
+        The icon theme to apply when the system color scheme is set to
+        "prefer-dark". Leave empty to not change the icon theme in dark mode.
+      </description>
+    </key>
+
+    <key name="icon-light-theme" type="s">
+      <default>""</default>
+      <summary>Icon light theme</summary>
+      <description>
+        The icon theme to apply when the system color scheme is set to light.
+        Leave empty to not change the icon theme in light mode.
+      </description>
+    </key>
+
+  </schema>
+</schemalist>
